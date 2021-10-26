@@ -107,9 +107,9 @@ public class RecorderEntry implements BuildLogger, SubBuildListener {
             Throwable error = event.getException();
 
             if (error == null) {
-                out.println(String.format("%nBUILD SUCCESSFUL"));
+                out.printf("%nBUILD SUCCESSFUL%n");
             } else {
-                out.println(String.format("%nBUILD FAILED%n"));
+                out.printf("%nBUILD FAILED%n%n");
                 error.printStackTrace(out); //NOSONAR
             }
         }
@@ -188,7 +188,7 @@ public class RecorderEntry implements BuildLogger, SubBuildListener {
     public void messageLogged(BuildEvent event) {
         log("--- MESSAGE LOGGED", Project.MSG_DEBUG);
 
-        StringBuffer buf = new StringBuffer();
+        final StringBuilder buf = new StringBuilder();
 
         if (event.getTask() != null) {
             String name = event.getTask().getTaskName();
@@ -272,12 +272,12 @@ public class RecorderEntry implements BuildLogger, SubBuildListener {
 
 
         if (minutes > 0) {
-            return Long.toString(minutes) + " minute"
+            return minutes + " minute"
                  + (minutes == 1 ? " " : "s ")
-                 + Long.toString(seconds % 60) + " second"
+                 + seconds % 60 + " second"
                  + (seconds % 60 == 1 ? "" : "s");
         } else {
-            return Long.toString(seconds) + " second"
+            return seconds + " second"
                  + (seconds % 60 == 1 ? "" : "s");
         }
         // CheckStyle:MagicNumber ON

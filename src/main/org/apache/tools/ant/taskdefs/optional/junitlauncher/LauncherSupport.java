@@ -141,7 +141,7 @@ public class LauncherSupport {
                     try {
                         firstListener.switchedSysOutHandle = trySwitchSysOutErr(testRequest, StreamType.SYS_OUT, originalSysErr);
                         firstListener.switchedSysErrHandle = trySwitchSysOutErr(testRequest, StreamType.SYS_ERR, originalSysErr);
-                        launcher.execute(request, testExecutionListeners.toArray(new TestExecutionListener[testExecutionListeners.size()]));
+                        launcher.execute(request, testExecutionListeners.toArray(new TestExecutionListener[0]));
                     } finally {
                         // switch back sysout/syserr to the original
                         try {
@@ -653,9 +653,8 @@ public class LauncherSupport {
         @Override
         public void executionStarted(final TestIdentifier testIdentifier) {
             super.executionStarted(testIdentifier);
-            AbstractJUnitResultFormatter.isTestClass(testIdentifier).ifPresent(testClass -> {
-                this.originalSysOut.println("Running " + testClass.getClassName());
-            });
+            AbstractJUnitResultFormatter.isTestClass(testIdentifier).ifPresent(testClass ->
+                    this.originalSysOut.println("Running " + testClass.getClassName()));
         }
 
 

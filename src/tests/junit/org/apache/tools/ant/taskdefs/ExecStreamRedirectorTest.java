@@ -27,8 +27,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Arrays;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -49,7 +49,7 @@ public class ExecStreamRedirectorTest {
     @Before
     public void setUp() throws IOException {
         buildRule.configureProject("src/etc/testcases/taskdefs/exec/exec-with-redirector.xml");
-        outputDir = folder.newFolder(String.valueOf("temp-" + System.nanoTime()));
+        outputDir = folder.newFolder("temp-" + System.nanoTime());
         buildRule.getProject().setUserProperty("output", outputDir.toString());
         buildRule.executeTarget("setUp");
     }
@@ -82,9 +82,8 @@ public class ExecStreamRedirectorTest {
             if (dirListingOutput != null) {
                 // Compare the directory listing that was redirected to these files.
                 // All files should have the same content.
-                assertTrue("Redirected output in file " + redirectedOutputFile +
-                        " doesn't match content in other redirected output file(s)",
-                        Arrays.equals(dirListingOutput, redirectedOutput));
+                assertArrayEquals("Redirected output in file " + redirectedOutputFile +
+                        " doesn't match content in other redirected output file(s)", dirListingOutput, redirectedOutput);
             }
             dirListingOutput = redirectedOutput;
         }
