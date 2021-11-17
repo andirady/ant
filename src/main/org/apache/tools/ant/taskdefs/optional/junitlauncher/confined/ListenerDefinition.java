@@ -27,6 +27,7 @@ import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 
 import static org.apache.tools.ant.taskdefs.optional.junitlauncher.confined.Constants.LD_XML_ATTR_CLASS_NAME;
+import static org.apache.tools.ant.taskdefs.optional.junitlauncher.confined.Constants.LD_XML_ATTR_LISTENER_EXTENSION;
 import static org.apache.tools.ant.taskdefs.optional.junitlauncher.confined.Constants.LD_XML_ATTR_LISTENER_RESULT_FILE;
 import static org.apache.tools.ant.taskdefs.optional.junitlauncher.confined.Constants.LD_XML_ATTR_LISTENER_USE_LEGACY_REPORTING_NAME;
 import static org.apache.tools.ant.taskdefs.optional.junitlauncher.confined.Constants.LD_XML_ATTR_OUTPUT_DIRECTORY;
@@ -49,6 +50,7 @@ public class ListenerDefinition {
     private String unlessProperty;
     private String className;
     private String resultFile;
+    private String extension = "txt";
     private boolean sendSysOut;
     private boolean sendSysErr;
     private String outputDir;
@@ -94,6 +96,7 @@ public class ListenerDefinition {
             }
             case LEGACY_XML: {
                 this.setClassName("org.apache.tools.ant.taskdefs.optional.junitlauncher.LegacyXmlResultFormatter");
+                this.setExtension("xml");
                 break;
             }
         }
@@ -105,6 +108,20 @@ public class ListenerDefinition {
 
     public String getResultFile() {
         return this.resultFile;
+    }
+
+    /**
+     * Sets the output file extension for this listener.
+     *
+     * @param extension file extension to use
+     * @since Ant 1.10.13
+     */
+    public void setExtension(String extension) {
+        this.extension = extension;
+    }
+
+    public String getExtension() {
+        return extension;
     }
 
     public void setSendSysOut(final boolean sendSysOut) {
@@ -186,6 +203,9 @@ public class ListenerDefinition {
         if (this.resultFile != null) {
             writer.writeAttribute(LD_XML_ATTR_LISTENER_RESULT_FILE, this.resultFile);
         }
+        if (this.extension != null) {
+            writer.writeAttribute(LD_XML_ATTR_LISTENER_EXTENSION, this.extension);
+        }
         writer.writeEndElement();
     }
 
@@ -209,6 +229,10 @@ public class ListenerDefinition {
         final String resultFile = reader.getAttributeValue(null, LD_XML_ATTR_LISTENER_RESULT_FILE);
         if (resultFile != null) {
             listenerDef.setResultFile(resultFile);
+        }
+        final String extension = reader.getAttributeValue(null, LD_XML_ATTR_LISTENER_EXTENSION);
+        if (extension != null) {
+            listenerDef.setExtension(extension);
         }
         final String useLegacyReportingName = reader.getAttributeValue(null,
                 LD_XML_ATTR_LISTENER_USE_LEGACY_REPORTING_NAME);
