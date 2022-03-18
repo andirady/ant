@@ -17,11 +17,19 @@
  */
 package org.apache.tools.ant.taskdefs;
 
+import java.io.Closeable;
 import java.io.File;
-import java.util.ArrayList;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.util.List;
-import java.util.StringTokenizer;
+import java.util.Objects;
 import java.util.Vector;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
@@ -37,6 +45,7 @@ import org.apache.tools.ant.types.resources.Resources;
 import org.apache.tools.ant.types.resources.Union;
 import org.apache.tools.ant.util.FileNameMapper;
 import org.apache.tools.ant.util.IdentityMapper;
+import org.apache.tools.ant.util.PropertyOutputStream;
 
 /**
  * Converts path and classpath information to a specific target OS
@@ -46,6 +55,29 @@ import org.apache.tools.ant.util.IdentityMapper;
  * @ant.task category="utility"
  */
 public class PathConvert extends Task {
+    private abstract class Output<T extends Closeable> implements Consumer<String>, Closeable {
+        final T target;
+
+        Output(T target) {
+            this.target = target;
+        }
+
+        @Override
+        public void close() throws IOException {
+            target.close();
+        }
+
+        @Override
+        public void accept(String t) {
+            try {
+                doAccept(t);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        abstract void doAccept(String t) throws Exception;
+    }
 
     /**
      * Set if we're running on windows
@@ -56,19 +88,19 @@ public class PathConvert extends Task {
     /**
      * Path to be converted
      */
-    private Resources path = null;
+    private Resources path;
     /**
      * Reference to path/fileset to convert
      */
-    private Reference refid = null;
+    private Reference refid;
     /**
      * The target OS type
      */
-    private String targetOS = null;
+    private String targetOS;
     /**
      * Set when targetOS is set to windows
      */
-    private boolean targetWindows = false;
+    private boolean targetWindows;
     /**
      * Set if we should create a new property even if the result is empty
      */
@@ -76,7 +108,7 @@ public class PathConvert extends Task {
     /**
      * The property to receive the conversion
      */
-    private String property = null;
+    private String property;
     /**
      * Path prefix map
      */
@@ -84,16 +116,19 @@ public class PathConvert extends Task {
     /**
      * User override on path sep char
      */
-    private String pathSep = null;
+    private String pathSep;
     /**
      * User override on directory sep char
      */
-    private String dirSep = null;
+    private String dirSep;
 
     /** Filename mapper */
-    private Mapper mapper = null;
+    private Mapper mapper;
 
     private boolean preserveDuplicates;
+
+    /** Destination {@link Resource} */
+    private Resource dest;
 
     /**
      * Helper class, holds the nested &lt;map&gt; values. Elements will look like
@@ -195,7 +230,7 @@ public class PathConvert extends Task {
     private synchronized Resources getPath() {
         if (path == null) {
             path = new Resources(getProject());
-            path.setCache(true);
+            path.setCache(false);
         }
         return path;
     }
@@ -322,6 +357,20 @@ public class PathConvert extends Task {
     }
 
     /**
+     * Set destination resource.
+     * @param dest
+     * @since Ant 1.10.13
+     */
+    public void setDest(Resource dest) {
+        if (dest != null) {
+            if (this.dest != null) {
+                throw new BuildException("@dest already set");
+            }
+        }
+        this.dest = dest;
+    }
+
+    /**
      * Do the execution.
      * @throws BuildException if something is invalid.
      */
@@ -344,62 +393,83 @@ public class PathConvert extends Task {
             }
             validateSetup(); // validate our setup
 
-            // Currently, we deal with only two path formats: Unix and Windows
-            // And Unix is everything that is not Windows
-            // (with the exception for NetWare and OS/2 below)
-
-            // for NetWare and OS/2, piggy-back on Windows, since here and
-            // in the apply code, the same assumptions can be made as with
-            // windows - that \\ is an OK separator, and do comparisons
-            // case-insensitive.
-            String fromDirSep = onWindows ? "\\" : "/";
-
-            StringBuilder rslt = new StringBuilder();
-
-            ResourceCollection resources = isPreserveDuplicates() ? path : new Union(path);
-            List<String> ret = new ArrayList<>();
-            FileNameMapper mapperImpl = mapper == null ? new IdentityMapper() : mapper.getImplementation();
-            for (Resource r : resources) {
-                String[] mapped = mapperImpl.mapFileName(String.valueOf(r));
-                for (int m = 0; mapped != null && m < mapped.length; ++m) {
-                    ret.add(mapped[m]);
-                }
-            }
             boolean first = true;
-            for (String string : ret) {
-                String elem = mapElement(string); // Apply the path prefix map
-
-                // Now convert the path and file separator characters from the
-                // current os to the target os.
-
-                if (!first) {
-                    rslt.append(pathSep);
+            try (Output<?> o = createOutput()) {
+                for (String s : (Iterable<String>) streamResources()::iterator) {
+                    if (first) {
+                        first = false;
+                    } else {
+                        o.accept(pathSep);
+                    }
+                    o.accept(s);
                 }
-                first = false;
-
-                StringTokenizer stDirectory = new StringTokenizer(elem, fromDirSep, true);
-
-                while (stDirectory.hasMoreTokens()) {
-                    String token = stDirectory.nextToken();
-                    rslt.append(fromDirSep.equals(token) ? dirSep : token);
-                }
-            }
-            // Place the result into the specified property,
-            // unless setonempty == false
-            if (setonempty || rslt.length() > 0) {
-                String value = rslt.toString();
-                if (property == null) {
-                    log(value);
-                } else {
-                    log("Set property " + property + " = " + value, Project.MSG_VERBOSE);
-                    getProject().setNewProperty(property, value);
-                }
+            } catch (IOException e) {
+                throw new BuildException(e);
             }
         } finally {
             path = savedPath;
             dirSep = savedDirSep;
             pathSep = savedPathSep;
         }
+    }
+
+    @SuppressWarnings("resource")
+    private Output<?> createOutput() throws IOException {
+        if (dest != null) {
+            return new Output<Writer>(new OutputStreamWriter(dest.getOutputStream())) {
+
+                @Override
+                void doAccept(String t) throws IOException {
+                    target.write(t);
+                }
+            };
+        }
+        // avoid OutputStreamWriter's buffering:
+        final OutputStream out;
+        if (property == null) {
+            out = new LogOutputStream(this);
+        } else {
+            out = new PropertyOutputStream(getProject(), property) {
+                @Override
+                public void close() {
+                    if (setonempty || size() > 0) {
+                        super.close();
+                        log("Set property " + property + " = " + getProject().getProperty(property),
+                            Project.MSG_VERBOSE);
+                    }
+                }
+            };
+        }
+        return new Output<OutputStream>(out) {
+
+            @Override
+            void doAccept(String t) throws IOException {
+                target.write(t.getBytes());
+            }
+        };
+    }
+
+    private Stream<String> streamResources() {
+        ResourceCollection resources = isPreserveDuplicates() ? path : Union.getInstance(path);
+        FileNameMapper mapperImpl = mapper == null ? new IdentityMapper() : mapper.getImplementation();
+
+        final boolean parallel = false;
+        Stream<String> result = StreamSupport.stream(resources.spliterator(), parallel).map(String::valueOf)
+            .map(mapperImpl::mapFileName).filter(Objects::nonNull).flatMap(Stream::of).map(this::mapElement);
+
+        // Currently, we deal with only two path formats: Unix and Windows
+        // And Unix is everything that is not Windows
+        // (with the exception for NetWare and OS/2 below)
+
+        // for NetWare and OS/2, piggy-back on Windows, since here and
+        // in the apply code, the same assumptions can be made as with
+        // windows - that \\ is an OK separator, and do comparisons
+        // case-insensitive.
+        final String fromDirSep = onWindows ? "\\" : "/";
+        if (fromDirSep.equals(dirSep)) {
+            return result;
+        }
+        return result.map(s -> s.replace(fromDirSep, dirSep));
     }
 
     /**
@@ -411,20 +481,8 @@ public class PathConvert extends Task {
      * @return String Updated element.
      */
     private String mapElement(String elem) {
-        // Iterate over the map entries and apply each one.
-        // Stop when one of the entries actually changes the element.
-
-        for (MapEntry entry : prefixMap) {
-            String newElem = entry.apply(elem);
-
-            // Note I'm using "!=" to see if we got a new object back from
-            // the apply method.
-
-            if (newElem != elem) {
-                return newElem;
-            }
-        }
-        return elem;
+        final Predicate<Object> changed = o -> o != elem;
+        return prefixMap.stream().map(e -> e.apply(elem)).filter(changed).findFirst().orElse(elem);
     }
 
     /**
@@ -457,9 +515,11 @@ public class PathConvert extends Task {
      * @throws BuildException if something is not set up properly.
      */
     private void validateSetup() throws BuildException {
-
         if (path == null) {
             throw new BuildException("You must specify a path to convert");
+        }
+        if (property != null && dest != null) {
+            throw new BuildException("@property and @dest are mutually exclusive");
         }
         // Determine the separator strings.  The dirsep and pathsep attributes
         // override the targetOS settings.

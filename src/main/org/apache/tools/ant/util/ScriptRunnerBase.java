@@ -332,8 +332,10 @@ public abstract class ScriptRunnerBase {
      */
     public void bindToComponent(ProjectComponent component) {
         project = component.getProject();
-        addBeans(project.getProperties());
-        addBeans(project.getUserProperties());
+
+        final Map<String, Object> effectiveProperties = new HashMap<>();
+        project.getPropertyNames().forEach(n -> effectiveProperties.put(n, project.getProperty(n)));
+        addBeans(effectiveProperties);
         addBeans(project.getCopyOfTargets());
         addBeans(project.getCopyOfReferences());
         addBean("project", project);

@@ -21,10 +21,12 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.tools.ant.AntTypeDefinition;
 import org.apache.tools.ant.BuildException;
@@ -35,6 +37,7 @@ import org.apache.tools.ant.ProjectHelper;
 import org.apache.tools.ant.taskdefs.DefBase;
 import org.apache.tools.ant.types.ResourceCollection;
 import org.apache.tools.ant.util.ClasspathUtils;
+import org.apache.tools.ant.util.ScriptManager;
 import org.apache.tools.ant.util.ScriptRunnerBase;
 import org.apache.tools.ant.util.ScriptRunnerHelper;
 
@@ -65,6 +68,13 @@ public class ScriptDef extends DefBase {
     private Map<String, NestedElement> nestedElementMap;
 
     /**
+     * Create a new {@link ScriptDef}.
+     */
+    public ScriptDef() {
+        helper.setSetBeans(false);
+    }
+
+    /**
      * Set the project.
      * @param project the project that this definition belongs to.
      */
@@ -72,7 +82,6 @@ public class ScriptDef extends DefBase {
     public void setProject(Project project) {
         super.setProject(project);
         helper.setProjectComponent(this);
-        helper.setSetBeans(false);
     }
 
     /**
@@ -103,13 +112,54 @@ public class ScriptDef extends DefBase {
         /** The attribute name */
         private String name;
 
+        /** The attribute's default value */
+        private String defaultValue;
+
         /**
-         * Sets the attribute name
+         * Sets the attribute name.
          *
          * @param name the attribute name
          */
         public void setName(String name) {
             this.name = name.toLowerCase(Locale.ENGLISH);
+        }
+
+        /**
+         * Get the name of this {@link Attribute}.
+         * 
+         * @return {@link String}
+         */
+        String getName() {
+            return name;
+        }
+
+        /**
+         * Set the default value of this {@link Attribute}.
+         *
+         * @param defaultValue {@link String}
+         * @since Ant 1.10.13
+         */
+        public void setDefault(String defaultValue) {
+            this.defaultValue = defaultValue;
+        }
+
+        /**
+         * Get the default value of this {@link Attribute}, {@code null} if
+         * unset.
+         * 
+         * @return {@link String}
+         * @since Ant 1.10.13
+         */
+        String getDefault() {
+            return defaultValue;
+        }
+
+        /**
+         * Learn whether this {@link Attribute} has a default value set.
+         * @return {@code boolean}
+         */
+        boolean hasDefault() {
+            return defaultValue != null;
         }
     }
 
@@ -339,7 +389,8 @@ public class ScriptDef extends DefBase {
     public void executeScript(Map<String, String> attributes,
         Map<String, List<Object>> elements, ScriptDefBase instance) {
         ScriptRunnerBase runner = helper.getScriptRunner();
-        runner.addBean("attributes", attributes);
+
+        runner.addBean("attributes", withDefault(attributes));
         runner.addBean("elements", elements);
         runner.addBean("project", getProject());
         if (instance != null) {
@@ -353,7 +404,16 @@ public class ScriptDef extends DefBase {
      *
      * @param manager the scripting manager.
      */
+    @Deprecated
     public void setManager(String manager) {
+        helper.setManager(manager);
+    }
+
+    /**
+     * Set the script manager.
+     * @param manager
+     */
+    public void setManager(ScriptManager manager) {
         helper.setManager(manager);
     }
 
@@ -396,6 +456,20 @@ public class ScriptDef extends DefBase {
     }
 
     /**
+     * Set the setbeans attribute.
+     * If this is true, &lt;script&gt; will create variables in the
+     * script instance for all
+     * properties, targets and references of the current project.
+     * It this is false, only the project and self variables will
+     * be set.
+     * The default is true.
+     * @param setBeans the value to set.
+     */
+    public void setSetBeans(boolean setBeans) {
+        helper.setSetBeans(setBeans);
+    }
+
+    /**
      * Sets the script text.
      *
      * @param text a component of the script text to be added.
@@ -411,5 +485,29 @@ public class ScriptDef extends DefBase {
      */
     public void add(ResourceCollection resource) {
         helper.add(resource);
+    }
+
+    private Map<String, String> withDefault(Map<String, String> attributes) {
+        /*
+         * The following is checked in ScriptDefBase but some other caller to
+         * #executeScript() could pass in anything they like
+         */
+        final Set<String> unsupported =
+            attributeSet.stream().filter(a -> !this.isAttributeSupported(a)).map(s -> '@' + s)
+                .collect(Collectors.toSet());
+
+        if (!unsupported.isEmpty()) {
+            throw new BuildException("Found unsupported attributes " + unsupported);
+        }
+        if (this.attributes.isEmpty()) {
+            return attributes;
+        }
+        final Map<String, String> result =
+            this.attributes.stream().filter(Attribute::hasDefault).collect(Collectors
+                .toMap(Attribute::getName, Attribute::getDefault, (l, r) -> r, LinkedHashMap::new));
+
+        result.putAll(attributes);
+
+        return result;
     }
 }

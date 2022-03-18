@@ -46,6 +46,7 @@ import org.apache.commons.net.ftp.FTPClientConfig;
 import org.apache.commons.net.ftp.FTPFile;
 import org.apache.commons.net.ftp.FTPReply;
 import org.apache.commons.net.ftp.FTPConnectionClosedException;
+import org.apache.commons.net.ftp.FTPSClient;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.DirectoryScanner;
 import org.apache.tools.ant.Project;
@@ -58,6 +59,8 @@ import org.apache.tools.ant.util.FileUtils;
 import org.apache.tools.ant.util.RetryHandler;
 import org.apache.tools.ant.util.Retryable;
 import org.apache.tools.ant.util.VectorSet;
+
+import javax.net.ssl.HostnameVerifier;
 
 /**
  * Basic FTP client. Performs the following actions:
@@ -112,6 +115,8 @@ public class FTP extends Task implements FTPTaskConfig {
     private String userid;
     private String password;
     private String account;
+    private boolean useFtps = false;
+    private HostnameVerifier hostnameVerifier;
     private File listing;
     private boolean binary = true;
     private boolean passive = false;
@@ -1263,6 +1268,18 @@ public class FTP extends Task implements FTPTaskConfig {
         this.userid = userid;
     }
 
+    /**
+     * Whether to use ftps instead of ftp.
+     *
+     * @since 1.10.13
+     */
+    public void setUseFtps(boolean useFtps) {
+        this.useFtps = useFtps;
+    }
+
+    public void add(HostnameVerifier hostnameVerifier) {
+        this.hostnameVerifier = hostnameVerifier;
+    }
 
     /**
      * Sets the login password for the given user id.
@@ -2501,9 +2518,18 @@ public class FTP extends Task implements FTPTaskConfig {
         FTPClient ftp = null;
 
         try {
-            log("Opening FTP connection to " + server, Project.MSG_VERBOSE);
-
-            ftp = new FTPClient();
+            if (useFtps) {
+                log("Opening FTPs connection to " + server, Project.MSG_VERBOSE);
+                FTPSClient ftps = new FTPSClient();
+                ftps.setEndpointCheckingEnabled(true);
+                if (hostnameVerifier != null) {
+                    ftps.setHostnameVerifier(hostnameVerifier);
+                }
+                ftp = ftps;
+            } else {
+                log("Opening FTP connection to " + server, Project.MSG_VERBOSE);
+                ftp = new FTPClient();
+            }
             if (this.isConfigurationSet) {
                 ftp = FTPConfigurator.configure(ftp, this);
             }

@@ -24,6 +24,19 @@ public class BuildException extends RuntimeException {
 
     private static final long serialVersionUID = -5419014565354664240L;
 
+    /**
+     * Get a {@link BuildException} for the specified {@link Throwable}.
+     * @param t
+     * @return {@link BuildException}
+     * @since Ant 1.10.13
+     */
+    public static BuildException of(Throwable t) {
+        if (t instanceof BuildException) {
+            return (BuildException) t;
+        }
+        return new BuildException(t);
+    }
+
     /** Location in the build file where the exception occurred */
     private Location location = Location.UNKNOWN_LOCATION;
 
